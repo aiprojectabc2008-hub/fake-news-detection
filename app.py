@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -34,70 +33,97 @@ def scrape_text_from_url(url):
     except Exception as e:
         return None, str(e)
 
-# 2. Pull a Stable, Balanced, Real-vs-Fake Dataset (6,000+ Verified Articles)
-@st.cache_data
-def load_balanced_dataset():
-    # Utilizing an alternate, high-uptime mirror for the classic Welker Fake/Real News Dataset
-    url = "https://raw.githubusercontent.com/skandavivek/Fake-News-Prediction/main/fake_or_real_news.csv"
-    df = pd.read_csv(url)
-    # Filter down to the text columns and ensure labels are strictly "REAL" and "FAKE"
-    df = df[['text', 'label']].dropna()
-    return df
-
-# 3. Model Training Pipeline
+# 2. Self-Contained, Balanced Training Dataset (No External Web Links Needed!)
 @st.cache_resource
 def train_model():
-    df = load_balanced_dataset()
-    # TF-IDF looks at individual words and 2-word combinations (ngrams) to detect tone
+    # A diverse dictionary of factual journalistic reports vs classic fake news formats
+    training_data = {
+        'text': [
+            # --- REAL NEWS SAMPLES (Objective, neutral, formal language) ---
+            "The Federal Reserve announced a quarter-percentage-point interest rate hike this morning following months of intense debate among central bank governors regarding stubborn inflation.",
+            "The prime minister signed the historic climate and green energy bill into law today after several weeks of parliamentary debate and amendments.",
+            "Local municipal leaders have raised over $50,000 via community grants to restore and save the historic downtown public library from permanent closure.",
+            "The labor department metrics released earlier this week show national unemployment rates have flattened out, though manufacturing indexes saw a minor drop.",
+            "Public health officials issued a standard advisory confirming that annual influenza vaccine distributions will begin next week across local clinics.",
+            "The supreme court voted to uphold the regulatory standards on interstate commerce, affecting environmental policies across three neighboring states.",
+            "Shares of major technology companies fluctuated sharply following the closing bell after several firms reported lower-than-expected quarterly hardware revenue.",
+            "The space agency successfully launched its latest meteorological satellite into orbit today, aiming to improve regional storm tracking capabilities.",
+            
+            # --- FAKE NEWS SAMPLES (Sensationalism, conspiracy keywords, exclamation marks) ---
+            "BREAKING: WikiLeaks hacks have officially confirmed shocking secret underground networks operating under local pizza shops led by top political elites!",
+            "ALERT: The government is releasing invisible trackable nano-bots via regular tap water networks to monitor citizens without their knowledge or consent!",
+            "SHOCKING SECRET: Drinking five gallons of fresh organic lemon juice daily completely cures all terminal illnesses and major diseases instantly!",
+            "CONFIRMED: The earth is actually completely hollow and a secret elite class lives inside controlling the global weather patterns using giant lasers!",
+            "URGENT WARNING: The latest health clinics are hiding microchips inside common medicine to track your physical location and movements!",
+            "Leaked top-secret military files prove that ancient alien civilizations built a massive command base directly beneath the dark side of the moon.",
+            "MUST SEE: A rogue anonymous whistleblower just uploaded video evidence showing elite bankers staging major global economic events in secret backrooms.",
+            "The mainstream media is completely hiding the truth about a newly discovered miracle vegetable that reverses aging overnight because of big pharma profit!"
+        ],
+        'label': [
+            'REAL', 'REAL', 'REAL', 'REAL', 'REAL', 'REAL', 'REAL', 'REAL',
+            'FAKE', 'FAKE', 'FAKE', 'FAKE', 'FAKE', 'FAKE', 'FAKE', 'FAKE'
+        ]
+    }
+    
+    df = pd.DataFrame(training_data)
+    
+    # TF-IDF converts text patterns to mathematical weights
     pipeline = Pipeline([
-        ('tfidf', TfidfVectorizer(stop_words='english', max_df=0.7, ngram_range=(1,2))),
-        ('classifier', PassiveAggressiveClassifier(max_iter=50, random_state=42))
+        ('tfidf', TfidfVectorizer(stop_words='english', max_df=1.0, ngram_range=(1,2))),
+        ('classifier', PassiveAggressiveClassifier(max_iter=100, random_state=42))
     ])
     pipeline.fit(df['text'], df['label'])
     return pipeline
 
 # Train the AI
-with st.spinner("🤖 Training AI on 6,300+ balanced True & Fake articles..."):
+with st.spinner("🤖 Initializing AI Text and Link Classifier..."):
     model = train_model()
 
-# 4. Interactive User Interface
+# 3. Interactive User Interface Layout
 st.title("📰 AI News Text & Link Analyzer")
-st.write("Paste a paragraph **OR** an active news link to evaluate its truth pattern against 6,000+ articles.")
+st.write("Our AI checks text patterns for integrity. Paste a news paragraph **OR** an active news link (URL).")
 
-user_input = st.text_area("Paste News Text or Article URL here:", height=180, placeholder="https://example.com/story  OR  Paste text...")
+user_input = st.text_area("Paste News Text or Article URL here:", height=180, placeholder="https://example.com/story  OR  Paste paragraph...")
 
-if st.button("Verify Integrity", type="primary"):
+if st.button("Verify Content", type="primary"):
     text_to_analyze = user_input.strip()
     
     if not text_to_analyze:
         st.warning("⚠️ Please enter a text paragraph or web link first.")
     else:
-        # If the input is a web link, automatically scrape it
+        # Check if the input is a web link
         if text_to_analyze.startswith("http://") or text_to_analyze.startswith("https://"):
-            with st.spinner("🌐 Crawling website text content..."):
+            with st.spinner("🌐 Accessing link and extracting article content..."):
                 scraped_text, error = scrape_text_from_url(text_to_analyze)
                 
             if error:
                 st.error(f"❌ Web Scraper Blocked. Reason: {error}")
-                st.info("Note: Premium news networks block code scrapers. Try manual copy/pasting instead!")
+                st.info("Note: Many premium news sites block automated bots. Try copying and pasting the text manually!")
                 text_to_analyze = None
             else:
                 text_to_analyze = scraped_text
-                st.info(f"✨ Successfully pulled {len(text_to_analyze.split())} words from the link context.")
+                st.info(f"✨ Successfully pulled text content from link ({len(text_to_analyze.split())} words found).")
 
-        # Run model analysis if valid text is ready
+        # Run AI prediction if text is ready
         if text_to_analyze:
-            if len(text_to_analyze.split()) < 10:
-                st.warning("⚠️ Please provide a longer statement (at least 10 words) for an accurate AI prediction.")
+            if len(text_to_analyze.split()) < 5:
+                st.warning("⚠️ Please provide a longer statement or paragraph (at least 5 words) for an accurate reading.")
             else:
                 prediction = model.predict([text_to_analyze])[0]
                 
                 st.markdown("---")
-                if prediction == "REAL" or prediction.strip().upper() == "REAL":
-                    st.success("### ✅ Result: Likely REAL Content")
-                    st.write("Our classification layout flags this text style as objective, journalistic reporting.")
+                if prediction == "REAL":
+                    st.success("### ✅ Result: Matches REAL News Patterns")
+                    st.write("The vocabulary structure, neutral framing, and context mirror standard objective journalism.")
                 else:
-                    st.error("### 🚨 Result: Highly Suspicious (Likely FAKE)")
-                    st.write("Warning: This text pattern heavily aligns with sensationalized tracking data, hoaxes, or political misinformation.")
+                    st.error("### 🚨 Result: Matches FAKE News Patterns")
+                    st.write("Warning: This content uses aggressive language clusters, emotional triggers, or specific phrasing linked to misinformation hoaxes.")
 
-  
+   
+
+
+   
+
+              
+          
+                 
