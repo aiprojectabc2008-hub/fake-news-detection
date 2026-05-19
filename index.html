@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Content Fact-Detector</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; margin: 40px; color: #333; }
+        .container { max-width: 700px; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin: auto; }
+        textarea { width: 100%; height: 120px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; resize: vertical; }
+        button { background: #007bff; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        button:hover { background: #0056b3; }
+        .result { margin-top: 20px; padding: 15px; border-radius: 4px; font-weight: bold; display: none; }
+        .REAL { background: #d4edda; color: #155724; border-left: 5px solid #28a745; }
+        .FAKE { background: #f8d7da; color: #721c24; border-left: 5px solid #dc3545; }
+        .feedback-box { margin-top: 25px; padding-top: 20px; border-top: 1px solid #eee; }
+        .btn-feed { background: #6c757d; font-size: 14px; padding: 8px 15px; margin-right: 5px; }
+        .btn-fake { background: #dc3545; }
+        .btn-real { background: #28a745; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Real-Time News Content Verifier</h2>
+    <p>Paste an article below to analyze semantic truth context markers.</p>
+    
+    <textarea id="newsText" placeholder="Type or paste news text content here..."></textarea>
+    <button onclick="checkNews()">Analyze Content</button>
+
+    <div id="resultBox" class="result"></div>
+
+    <div class="feedback-box">
+        <h4>Teach the Model (Self-Training Simulation)</h4>
+        <p style="font-size: 13px; color: #666;">If you know the absolute truth value of this text, submit it to trigger the automated training engine loop:</p>
+        <button class="btn-feed btn-real" onclick="submitFeedback(1)">Submit as Known REAL</button>
+        <button class="btn-feed btn-fake" onclick="submitFeedback(0)">Submit as Known FAKE</button>
+        <p id="feedbackStatus" style="font-size: 13px; color: #28a745; margin-top: 10px;"></p>
+    </div>
+</div>
+
+<script>
+    const API_URL = "http://127.0.0.1:8000";
+
+    async function checkNews() {
+        const text = document.getElementById("newsText").value;
+        if(!text) return alert("Please enter text first.");
+
+        const response = await fetch(`${API_URL}/predict`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text })
+        });
+        const data = await response.json();
+        
+        const resultBox = document.getElementById("resultBox");
+        resultBox.style.display = "block";
+        resultBox.className = `result ${data.verdict}`;
+        resultBox.innerText = `Prediction Verdict: This content looks like ${data.verdict} News.`;
+    }
+
+    async function submitFeedback(labelValue) {
+        const text = document.getElementById("newsText").value;
+        if(!text) return alert("Paste text inside the box first before pushing feedback labels.");
+
+        const response = await fetch(`${API_URL}/feedback`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text, label: labelValue })
+        });
+        const data = await response.json();
+        document.getElementById("feedbackStatus").innerText = `Logged! Items in retraining queue: ${data.buffer_count}/5. Once it reaches 5, watch your backend console log update live.`;
+    }
+</script>
+
+</body>
+</html>
