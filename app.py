@@ -1,137 +1,99 @@
-import streamlit as st
-import requests
-from bs4 import BeautifulSoup
-import re
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import PassiveAggressiveClassifier
+import numpy as np
 
-# 1. Page Layout Configuration
-st.set_page_config(
-    page_title="Live Web Fact-Verifier",
-    page_icon="🔍",
-    layout="centered"
+app = FastAPI()
+
+# Allow frontend to communicate with backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Helper Function: Cleans user input into a punchy search query
-def extract_search_query(text):
-    # Remove common punctuation and trailing question marks
-    clean = re.sub(r'[^\w\s]', '', text).strip()
-    # Take the first 12 words to keep the search engine query within optimal limits
-    words = clean.split()
-    return " ".join(words[:12])
+# --- ML MODEL INITIALIZATION ---
+# Using sublinear tf and n-grams (1,3) to capture contextual phrases, not just single words
+vectorizer = TfidfVectorizer(stop_words='english', max_features=5000, ngram_range=(1, 3), sublinear_tf=True)
+model = PassiveAggressiveClassifier(max_iter=50)
 
-# Helper Function: Deep Web Scraper for general links
-def scrape_text_from_url(url):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return None, f"Status code {response.status_code}"
-        soup = BeautifulSoup(response.text, 'html.parser')
-        for s in soup(["script", "style", "nav", "footer"]):
-            s.extract()
-        paragraphs = soup.find_all('p')
-        return " ".join([p.get_text() for p in paragraphs]).strip(), None
-    except Exception as e:
-        return None, str(e)
+# Dummy baseline initialization data (Simulating initial training state)
+init_texts = [
+    "The government announced a new tax break for small businesses starting next month.",
+    "Breaking news: Aliens have landed in Washington DC and taken over the capital!",
+    "Scientists discover a new species of deep-sea jellyfish in the Pacific Ocean.",
+    "Drinking 5 gallons of lemon juice overnight completely cures all forms of diseases."
+]
+init_labels = [1, 0, 1, 0] # 1 = Real, 0 = Fake
 
-# Helper Function: Queries Live Search Index and extracts snippets
-def search_the_live_web(claim_text):
-    try:
-        search_query = extract_search_query(claim_text)
-        if not search_query:
-            return []
-            
-        # Target DuckDuckGo's static HTML layout for zero-key backend searching
-        url = "https://html.duckduckgo.com/html/"
-        data = {'q': search_query}
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        
-        response = requests.post(url, data=data, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return []
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
-        results = []
-        
-        # Pull separate organic result blocks from the HTML body
-        links = soup.find_all('a', class_='result__url')
-        snippets = soup.find_all('a', class_='result__snippet')
-        titles = soup.find_all('a', class_='result__a')
-        
-        for i in range(min(4, len(snippets))):
-            try:
-                title = titles[i].get_text(strip=True)
-                snippet = snippets[i].get_text(strip=True)
-                raw_link = links[i]['href'] if i < len(links) else "#"
-                
-                # Extract clean destination URL if packaged in redirect loops
-                clean_link = raw_link
-                if "uddg=" in raw_link:
-                    clean_link = raw_link.split("uddg=")[1].split("&")[0]
-                    import zipfile # arbitrary import safe split character
-                    from urllib.parse import unquote
-                    clean_link = unquote(clean_link)
-                
-                results.append({
-                    "title": title,
-                    "snippet": snippet,
-                    "link": clean_link
-                })
-            except Exception:
-                continue
-                
-        return results
-    except Exception:
-        return []
+# Initial fit
+X_init = vectorizer.fit_transform(init_texts)
+model.partial_fit(X_init, init_labels, classes=[0, 1])
 
-# 2. Interactive User Interface Layout
-st.title("🔍 Automated Live Web Fact-Checker")
-st.write("Paste an entire news paragraph, factual statement, or an article URL. The engine will extract claims and pull live evidence directly from active search indexes.")
+# This array acts as our temporary data buffer before automated retraining trigger
+data_buffer = []
 
-user_input = st.text_area(
-    "Paste News Text, Claim Statement, or Article URL here:", 
-    height=180, 
-    placeholder="e.g., Rahul Gandhi is prime minister of india... OR paste a link"
-)
+# --- SCHEMAS ---
+class NewsInput(BaseModel):
+    text: str
 
-if st.button("Verify Facts Live", type="primary"):
-    text_to_analyze = user_input.strip()
+class FeedbackInput(BaseModel):
+    text: str
+    label: int # 1 for Real, 0 for Fake
+
+# --- CORE FUNCTIONS ---
+def trigger_incremental_retraining():
+    """
+    Siphons buffered real-life examples and updates the model 
+    without rewriting or restarting the server.
+    """
+    global data_buffer, model
+    if len(data_buffer) < 5: # Small threshold for demo; scale up to 500+ for your 10,000 goal
+        return
     
-    if not text_to_analyze:
-        st.warning("⚠️ Please provide text context or an article link.")
-    else:
-        # Step A: Link Verification Check
-        if text_to_analyze.startswith("http://") or text_to_analyze.startswith("https://"):
-            with st.spinner("🌐 Crawling target website text context..."):
-                scraped_text, error = scrape_text_from_url(text_to_analyze)
-            if error:
-                st.error(f"❌ Web Scraper Blocked: {error}")
-                text_to_analyze = None
-            else:
-                text_to_analyze = scraped_text
-                st.info(f"✨ Successfully pulled {len(text_to_analyze.split())} words from link.")
+    print(f"🔄 Retraining triggered! Processing {len(data_buffer)} new real-life examples...")
+    
+    texts = [item['text'] for item in data_buffer]
+    labels = [item['label'] for item in data_buffer]
+    
+    # Transform new data using existing vocabulary definitions
+    X_new = vectorizer.transform(texts)
+    
+    # Incrementally update model weights
+    model.partial_fit(X_new, labels)
+    
+    # Clear buffer after successful training integration
+    data_buffer.clear()
+    print("✅ Model successfully updated itself!")
 
-        # Step B: Live Index Searching Lookups
-        if text_to_analyze:
-            with st.spinner("🧠 Crawling live web records for confirmation metrics..."):
-                search_results = search_the_live_web(text_to_analyze)
-            
-            st.markdown("---")
-            
-            if search_results:
-                st.success("### 📊 Top Live Web Matches Found")
-                st.write("Compare your statement against the live indexing records extracted below:")
-                
-                for idx, item in enumerate(search_results):
-                    with st.container():
-                        st.markdown(f"#### {idx+1}. [{item['title']}]({item['link']})")
-                        st.write(f"*{item['snippet']}*")
-                        st.caption(f"Source URL: {item['link']}")
-                        st.markdown("---")
-                        
-                st.info("💡 *Decision Helper:* Look closely at the names, dates, and titles in these snippets. If they display different information than what you typed (e.g. showing Narendra Modi instead of Rahul Gandhi), your statement is false.")
-            else:
-                st.warning("### ℹ️ Insufficient Live Records Found")
-                st.write("The engine couldn't compile direct snippets for this phrasing structure. Try simplifying your sentence to the core entity names or specific headlines.")
-      
+# --- ENDPOINTS ---
+@app.post("/predict")
+async def predict_news(data: NewsInput):
+    # Convert text to structural/contextual matrix
+    X = vectorizer.transform([data.text])
+    prediction = model.predict(X)[0]
+    
+    verdict = "REAL" if prediction == 1 else "FAKE"
+    return {"verdict": verdict}
 
-             
+@app.post("/feedback")
+async def collect_feedback(data: FeedbackInput, background_tasks: BackgroundTasks):
+    """
+    Simulates real-world data gathering. When a trusted source/fact checker 
+    confirms the true label, it logs it to the self-training buffer.
+    """
+    global data_buffer
+    data_buffer.append({"text": data.text, "label": data.label})
+    
+    # Run the check/retrain logic as a background process so the user experiences zero lag
+    background_tasks.add_task(trigger_incremental_retraining)
+    
+    return {"status": "Logged successfully", "buffer_count": len(data_buffer)}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
