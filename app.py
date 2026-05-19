@@ -11,65 +11,55 @@ st.set_page_config(
     layout="centered"
 )
 
-# 2. Pull a Massive Real-World Dataset (6,000+ articles)
+# 2. Pull a Guaranteed, Massive Dataset of True/False News Articles
 @st.cache_data
 def load_real_dataset():
-    # A universally available, verified public NLP dataset for real vs fake news
-    url = "https://raw.githubusercontent.com/datasets/fake-news-detection/main/data.csv"
-    try:
-        df = pd.read_csv(url)
-        # Ensure correct mapping for this specific dataset
-        df = df[['text', 'label']].dropna()
-        # Convert numeric 1/0 labels to text if needed, or keep text
-        df['label'] = df['label'].astype(str).str.upper()
-        # Map dataset variants like '0'/'1' or 'REAL'/'FAKE' uniformly
-        df['label'] = df['label'].map({'1': 'REAL', '0': 'FAKE', 'REAL': 'REAL', 'FAKE': 'FAKE'})
-        return df.dropna()
-    except Exception:
-        # Emergency backup data if the primary internet source ticks off
-        return pd.DataFrame({
-            'text': ["President signed law today.", "Alien base discovered on moon!", "Library raised money.", "Lemon juice cures all cancer instantly!"],
-            'label': ['REAL', 'FAKE', 'REAL', 'FAKE']
-        })
+    # This is a highly stable public dataset containing thousands of real and fake articles
+    url = "https://raw.githubusercontent.com/jillanisofttech/fake-or-real-news/master/fake_or_real_news.csv"
+    df = pd.read_csv(url)
+    # Filter the dataset to just the text content and the FAKE/REAL label
+    df = df[['text', 'label']]
+    return df
 
-# 3. Model Training Pipeline
+# 3. Machine Learning Model Training Pipeline
 @st.cache_resource
 def train_model():
     df = load_real_dataset()
-    # TF-IDF converts words to math, PassiveAggressive learns from complex text rules
+    # TfidfVectorizer analyzes the actual vocabulary and word combinations
     pipeline = Pipeline([
         ('tfidf', TfidfVectorizer(stop_words='english', max_df=0.7, ngram_range=(1,2))),
-        ('classifier', PassiveAggressiveClassifier(max_iter=100, random_state=42))
+        ('classifier', PassiveAggressiveClassifier(max_iter=50, random_state=42))
     ])
     pipeline.fit(df['text'], df['label'])
     return pipeline
 
-# Initialize the smart brain
-with st.spinner("🤖 Training AI on 6,000+ real news articles... please wait a moment..."):
+# Train the model and show a nice loading spinner while it reads thousands of lines
+with st.spinner("🤖 Training AI on thousands of real-world articles... please wait..."):
     model = train_model()
 
 # 4. User Interface Layout
-st.title("📰 AI Fake News Detector")
-st.write("Our AI has been trained on real-world news patterns. Paste a snippet below to evaluate its linguistic truth score.")
+st.title("📰 AI News Statement Verifier")
+st.write("Our AI reads the context, grammar, and patterns of text to see if it matches verified journalism standards.")
 
-user_input = st.text_area("Enter News Content Here:", height=200, placeholder="Paste article paragraph here...")
+user_input = st.text_area("Paste the News Statement or Article Paragraph Here:", height=200, placeholder="Type or paste text...")
 
-if st.button("Analyze News Integrity", type="primary"):
+if st.button("Verify Statement", type="primary"):
     if not user_input.strip():
-        st.warning("⚠️ Please provide some text to analyze.")
-    elif len(user_input.split()) < 3:
-        st.warning("⚠️ Please paste a longer statement or paragraph for an accurate read.")
+        st.warning("⚠️ Please provide some news text to analyze.")
+    elif len(user_input.split()) < 5:
+        st.warning("⚠️ Please paste a full sentence or paragraph (at least 5 words) so the AI has enough context to analyze.")
     else:
-        # Run prediction
+        # Run prediction on the actual text content
         prediction = model.predict([user_input])[0]
         
         st.markdown("---")
         if prediction == "REAL":
-            st.success("### ✅ Result: Likely REAL News")
-            st.write("Our AI confirms the vocabulary structure mirrors factual journalism benchmarks.")
+            st.success("### ✅ Result: Likely REAL Statement")
+            st.write("The language structure, neutral tone, and phrasing pattern heavily align with verified, objective reporting.")
         else:
             st.error("### 🚨 Result: Highly Suspicious (Likely FAKE)")
-            st.write("Warning: This text exhibits high clusters of sensationalized or unverified language patterns.")
-            
-    
+            st.write("Warning: This statement displays heavy linguistic markers commonly associated with hoaxes, biased writing, or misinformation.")
        
+    
+
+            
