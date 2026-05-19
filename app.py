@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 
 # 1. Page Layout Configuration
 st.set_page_config(
-    page_title="AI Live Fact-Verifier",
+    page_title="Live Fact-Checker",
     page_icon="🔍",
     layout="centered"
 )
@@ -24,14 +24,23 @@ def scrape_text_from_url(url):
     except Exception as e:
         return None, str(e)
 
-# Helper Function: Live Search Fact-Checking Engine
-def live_fact_check(claim):
+# Helper Function: Automated Google/Web Reference Engine
+def query_live_database(claim):
+    """
+    Automated Web Search Engine:
+    Takes any statement, strips out filler words, searches a live index,
+    and returns a verified historical abstract or reference if available.
+    """
     try:
-        query = claim.lower().replace("?", "").strip()
-        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
+        # Format the text into a clean web query
+        clean_query = claim.lower().replace("?", "").replace("is the", "").replace("is an", "").strip()
+        url = f"https://api.duckduckgo.com/?q={clean_query}&format=json&no_html=1"
         response = requests.get(url, timeout=8).json()
         
+        # 1. Check for a direct encyclopedic description
         abstract = response.get("AbstractText", "")
+        
+        # 2. If empty, check for a related dictionary/historical heading definition
         if not abstract and response.get("RelatedTopics"):
             abstract = response.get("RelatedTopics")[0].get("Text", "")
             
@@ -39,19 +48,23 @@ def live_fact_check(claim):
     except Exception:
         return None
 
-# 2. User Interface Layout
-st.title("🔍 Live AI Fact Verifier Engine")
-st.write("This application evaluates whether a statement is **factually accurate** using live data and custom logic constraints.")
+# 2. Interactive User Interface
+st.title("🔍 Automated Live Fact-Checker")
+st.write("This engine scans web record summaries to help you evaluate if a name, entity, or historical claim is accurate.")
 
-user_input = st.text_area("Paste a News Statement, Claim, or Article Link here:", height=150, placeholder="e.g., Rahul Gandhi is prime minister of india", key="verifier_input_box")
+user_input = st.text_area(
+    "Enter a statement or paste a link to verify:", 
+    height=150, 
+    placeholder="e.g., Narendra Modi, Rahul Gandhi, or paste an article url..."
+)
 
-if st.button("Verify Statement Validity", type="primary", key="verify_button_submit"):
+if st.button("Verify Facts Live", type="primary"):
     text_to_analyze = user_input.strip()
     
     if not text_to_analyze:
-        st.warning("⚠️ Please enter a text statement or a web link.")
+        st.warning("⚠️ Please input text or a link first.")
     else:
-        # Link Scraper Handler
+        # URL link handling
         if text_to_analyze.startswith("http://") or text_to_analyze.startswith("https://"):
             with st.spinner("🌐 Accessing link and scraping text context..."):
                 scraped_text, error = scrape_text_from_url(text_to_analyze)
@@ -61,39 +74,25 @@ if st.button("Verify Statement Validity", type="primary", key="verify_button_sub
             else:
                 text_to_analyze = scraped_text
 
-        # Run Fact-Check Logic
+        # Run Live Automated Fact-Check
         if text_to_analyze:
-            lower_claim = text_to_analyze.lower()
-            custom_check_triggered = False
+            with st.spinner("🧠 Querying live global databases for reference data..."):
+                web_evidence = query_live_database(text_to_analyze)
             
             st.markdown("---")
             
-            # Fact Verification Check: Specific Political Claims
-            if "rahul gandhi" in lower_claim and "prime minister" in lower_claim:
-                st.error("### 🚨 Result: FALSE / MISINFORMATION")
-                st.markdown("**Factual Correction:** Rahul Gandhi is a prominent leader of the Indian National Congress party and a Member of Parliament, but **Narendra Modi** is the official Prime Minister of India.")
-                custom_check_triggered = True
-                
-            elif "lemon juice" in lower_claim and "cure" in lower_claim:
-                st.error("### 🚨 Result: FALSE / MEDICAL MISINFORMATION")
-                st.markdown("**Factual Correction:** There is no medical or scientific evidence proving that drinking lemon juice cures all terminal diseases or viruses.")
-                custom_check_triggered = True
-
-            # Live Search Database Lookup
-            if not custom_check_triggered:
-                with st.spinner("🧠 Scanning global knowledge bases..."):
-                    live_evidence = live_fact_check(text_to_analyze)
-                
-                if live_evidence:
-                    st.success("### ✅ Result: Context Verified")
-                    st.write(f"**Verified Record Data Found:** {live_evidence}")
-                else:
-                    st.info("### ℹ️ Result: Insufficient Database Records")
-                    st.write("No conclusive historical context or verified errors were triggered for this specific wording. Try testing 'Rahul Gandhi is prime minister of india' to see the intercept engine work!")
-        
-       
-        
-
+            if web_evidence:
+                st.success("### ✅ Live Reference Context Retrieved")
+                st.write("**Official Web Records State:**")
+                st.info(web_evidence)
+                st.write("📝 *How to evaluate your result:* Cross-reference the official text block above with your statement. If the details conflict (e.g., mismatching names/titles), your statement is likely incorrect.")
+            else:
+                st.warning("### ℹ️ No Conclusive Reference Found")
+                st.write("The database couldn't find a direct match for that specific wording. Try simplifying your query to the main subject or names (e.g., searching 'Prime Minister of India' or 'Rahul Gandhi' directly).")
+   
+      
+            
+             
             
        
  
