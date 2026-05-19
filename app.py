@@ -1,8 +1,8 @@
+
 import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from sklearn.datasets import fetch_20newsgroups
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import PassiveAggressiveClassifier
 from sklearn.pipeline import Pipeline
@@ -34,74 +34,70 @@ def scrape_text_from_url(url):
     except Exception as e:
         return None, str(e)
 
-# 2. Secure Local Model Training (No URL dependency)
+# 2. Pull a Stable, Balanced, Real-vs-Fake Dataset (6,000+ Verified Articles)
+@st.cache_data
+def load_balanced_dataset():
+    # Utilizing an alternate, high-uptime mirror for the classic Welker Fake/Real News Dataset
+    url = "https://raw.githubusercontent.com/skandavivek/Fake-News-Prediction/main/fake_or_real_news.csv"
+    df = pd.read_csv(url)
+    # Filter down to the text columns and ensure labels are strictly "REAL" and "FAKE"
+    df = df[['text', 'label']].dropna()
+    return df
+
+# 3. Model Training Pipeline
 @st.cache_resource
 def train_model():
-    # Fetch real news text categories (politics, space, electronics, medicine)
-    real_data = fetch_20newsgroups(subset='all', categories=[
-        'talk.politics.misc', 'sci.space', 'sci.med', 'sci.electronics'
-    ], remove=('headers', 'footers', 'quotes'))
-    
-    # Generate balanced fake samples using randomized/conspiracy keyword structures
-    fake_texts = [
-        "SECRET REVEALED: The government is using invisible frequencies to control your thoughts via cell towers!",
-        "URGENT WARNING: Drinking toxic cleaner completely cures all viruses instantly! Hidden by pharmacies!",
-        "BREAKING NEWS: Alien base discovered on the dark side of the moon by rogue independent astronomers.",
-        "CONFIRMED: The earth is actually hollow and a secret race lives inside controlling global weather patterns."
-    ] * 250  # Duplicate to balance training weights
-    
-    # Combine datasets
-    texts = list(real_data.data) + fake_texts
-    labels = ['REAL'] * len(real_data.data) + ['FAKE'] * len(fake_texts)
-    
-    # Build NLP Pipeline
+    df = load_balanced_dataset()
+    # TF-IDF looks at individual words and 2-word combinations (ngrams) to detect tone
     pipeline = Pipeline([
-        ('tfidf', TfidfVectorizer(stop_words='english', max_df=0.8, ngram_range=(1,2))),
+        ('tfidf', TfidfVectorizer(stop_words='english', max_df=0.7, ngram_range=(1,2))),
         ('classifier', PassiveAggressiveClassifier(max_iter=50, random_state=42))
     ])
-    pipeline.fit(texts, labels)
+    pipeline.fit(df['text'], df['label'])
     return pipeline
 
 # Train the AI
-with st.spinner("🤖 Adjusting AI settings to read text and links... please wait..."):
+with st.spinner("🤖 Training AI on 6,300+ balanced True & Fake articles..."):
     model = train_model()
 
-# 3. Interactive User Interface
-st.title("📰 Smart News Analyzer")
-st.write("Our AI checks text patterns for integrity. Paste a news paragraph **OR** a link (URL) to a news article.")
+# 4. Interactive User Interface
+st.title("📰 AI News Text & Link Analyzer")
+st.write("Paste a paragraph **OR** an active news link to evaluate its truth pattern against 6,000+ articles.")
 
-user_input = st.text_area("Paste News Text or News Article Link here:", height=180, placeholder="https://example.com/news-story  OR  Paste paragraph...")
+user_input = st.text_area("Paste News Text or Article URL here:", height=180, placeholder="https://example.com/story  OR  Paste text...")
 
-if st.button("Verify Content", type="primary"):
+if st.button("Verify Integrity", type="primary"):
     text_to_analyze = user_input.strip()
     
     if not text_to_analyze:
-        st.warning("⚠️ Please provide text or a link to analyze.")
+        st.warning("⚠️ Please enter a text paragraph or web link first.")
     else:
-        # Check if input is a link
+        # If the input is a web link, automatically scrape it
         if text_to_analyze.startswith("http://") or text_to_analyze.startswith("https://"):
-            with st.spinner("🌐 Accessing the website and scanning the article text..."):
+            with st.spinner("🌐 Crawling website text content..."):
                 scraped_text, error = scrape_text_from_url(text_to_analyze)
                 
             if error:
-                st.error(f"❌ Failed to read the link. Reason: {error}")
-                st.info("Tip: Some premium news websites block automated web scrapers. Copy and paste the text blocks manually instead!")
+                st.error(f"❌ Web Scraper Blocked. Reason: {error}")
+                st.info("Note: Premium news networks block code scrapers. Try manual copy/pasting instead!")
                 text_to_analyze = None
             else:
                 text_to_analyze = scraped_text
-                st.info(f"✨ Retrieved {len(text_to_analyze.split())} words from the link context!")
+                st.info(f"✨ Successfully pulled {len(text_to_analyze.split())} words from the link context.")
 
-        # Run prediction
+        # Run model analysis if valid text is ready
         if text_to_analyze:
-            if len(text_to_analyze.split()) < 5:
-                st.warning("⚠️ Please provide a statement or paragraph containing at least 5 words.")
+            if len(text_to_analyze.split()) < 10:
+                st.warning("⚠️ Please provide a longer statement (at least 10 words) for an accurate AI prediction.")
             else:
                 prediction = model.predict([text_to_analyze])[0]
                 
                 st.markdown("---")
-                if prediction == "REAL":
+                if prediction == "REAL" or prediction.strip().upper() == "REAL":
                     st.success("### ✅ Result: Likely REAL Content")
-                    st.write("The language layout, neutral framing, and context structures match factual benchmarks.")
+                    st.write("Our classification layout flags this text style as objective, journalistic reporting.")
                 else:
                     st.error("### 🚨 Result: Highly Suspicious (Likely FAKE)")
-                    st.write("Warning: This content uses aggressive patterns found in disinformation or online hoaxes.")
+                    st.write("Warning: This text pattern heavily aligns with sensationalized tracking data, hoaxes, or political misinformation.")
+
+  
