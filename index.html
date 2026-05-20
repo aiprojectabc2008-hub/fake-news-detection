@@ -58,19 +58,32 @@
         resultBox.className = `result ${data.verdict}`;
         resultBox.innerText = `Prediction Verdict: This content looks like ${data.verdict} News.`;
     }
+async function submitFeedback(labelValue) {
+    const text = document.getElementById("newsText").value;
+    if (!text) return alert("Paste text inside the box first before pushing feedback labels.");
 
-    async function submitFeedback(labelValue) {
-        const text = document.getElementById("newsText").value;
-        if(!text) return alert("Paste text inside the box first before pushing feedback labels.");
+    const response = await fetch(`${API_URL}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text, label: labelValue })
+    });
 
-        const response = await fetch(`${API_URL}/feedback`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: text, label: labelValue })
-        });
-        const data = await response.json();
-        document.getElementById("feedbackStatus").innerText = `Logged! Items in retraining queue: ${data.buffer_count}/5. Once it reaches 5, watch your backend console log update live.`;
+    const data = await response.json();
+
+    // Check if the backend triggered a full retrain loop
+    if (data.message && data.message.includes("Retraining triggered")) {
+        // Reset the screen back to 0/5
+        document.getElementById("feedbackStatus").innerText = "Logged! Items in retraining queue: 0/5";
+        alert("Model successfully updated itself on the backend!");
+    } else if (data.queue_count !== undefined) {
+        // Otherwise, show the exact live count sent by your python script
+        document.getElementById("feedbackStatus").innerText = `Logged! Items in retraining queue: ${data.queue_count}/5`;
+    } else {
+        // Fallback catch-all if data format varies
+        document.getElementById("feedbackStatus").innerText = "Logged! Items in retraining queue: 5/5";
     }
+}
+
 </script>
 
 </body>
